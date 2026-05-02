@@ -1,0 +1,14 @@
+{
+  "name": "AroundU",
+  "short_name": "AroundU",
+  "description": "Anonymous chat & hookups near you. 18+ only.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060608",
+  "theme_color": "#060608",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" }
+  ],
+  "categories": ["social", "entertainment"]
+}

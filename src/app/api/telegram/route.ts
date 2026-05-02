@@ -84,57 +84,87 @@ async function endSession(chatId: number, session: any) {
 
 // ---- Matching ----
 async function tryFind(chatId: number, session: any) {
-  await upsertSession(chatId, { status: 'searching' });
+  try {
+    await upsertSession(chatId, { status: 'searching' });
 
-  // Enter queue
-  const enterRes = await fetch(`${APP_URL}/api/queue`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: 'enter', userId: session.user_id, username: session.username,
-      region: session.region, gender: session.gender, genderPref: session.gender_pref,
+    // 1. Enter queue directly
+    await db.from('match_queue').delete().eq('user_id', session.user_id);
+    const { data: entry, error: enterErr } = await db.from('match_queue').insert({
+      user_id: session.user_id, username: session.username,
+      region: session.region || 'global',
+      gender: session.gender || 'Other', gender_pref: session.gender_pref || 'Any',
       city: '', state: '', country: '', lat: 0, lng: 0,
-      platform: 'telegram', platformPref: session.platform_pref,
-    }),
-  });
+      status: 'waiting', platform: 'telegram', platform_pref: session.platform_pref || 'Any',
+    }).select().single();
 
-  if (!enterRes.ok) {
-    await upsertSession(chatId, { status: 'idle' });
-    return tg.sendMessage(chatId, '❌ Queue error. Try again.');
-  }
+    if (enterErr || !entry) {
+      await upsertSession(chatId, { status: 'idle' });
+      return tg.sendMessage(chatId, '❌ Queue error. Try again.');
+    }
 
-  const { entry } = await enterRes.json();
-  await upsertSession(chatId, { queue_id: entry.id });
+    await upsertSession(chatId, { queue_id: entry.id });
 
-  // Immediately try to find a match
-  const findRes = await fetch(`${APP_URL}/api/queue`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'find', myEntryId: entry.id, userId: session.user_id }),
-  });
+    // 2. Find match directly
+    const { data: candidates } = await db
+      .from('match_queue').select('*')
+      .eq('status', 'waiting').neq('user_id', session.user_id)
+      .order('created_at', { ascending: true });
 
-  if (findRes.ok) {
-    const findResult = await findRes.json();
-    if (findResult.match) {
-      // Execute match
-      const execRes = await fetch(`${APP_URL}/api/queue`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'execute', myEntryId: entry.id,
-          matchEntryId: findResult.match.id, userId: session.user_id,
-        }),
+    let match = null;
+    if (candidates && candidates.length > 0) {
+      const filtered = candidates.filter((c: any) => {
+        if (entry.region === 'global' || c.region === 'global') return true;
+        return true; // Simple global matching fallback for TG
+      }).filter((c: any) => {
+        const myOk = entry.gender_pref === 'Any' || entry.gender_pref === c.gender;
+        const theirOk = c.gender_pref === 'Any' || c.gender_pref === entry.gender;
+        return myOk && theirOk;
+      }).filter((c: any) => {
+        const myOk = entry.platform_pref === 'Any' || entry.platform_pref === c.platform;
+        const theirOk = c.platform_pref === 'Any' || c.platform_pref === entry.platform;
+        return myOk && theirOk;
       });
-      if (execRes.ok) {
-        const { roomId } = await execRes.json();
-        await upsertSession(chatId, { status: 'chatting', room_id: roomId, queue_id: null });
+      if (filtered.length > 0) match = filtered[0];
+    }
+
+    // 3. Execute match if found
+    if (match) {
+      // Create room
+      const { data: room, error: roomErr } = await db.from('chat_rooms').insert({
+        type: '1v1', region: entry.region || 'global',
+      }).select().single();
+
+      if (room && !roomErr) {
+        // Update both to matched
+        await db.from('match_queue').update({ status: 'matched', matched_with: match.user_id, room_id: room.id }).eq('id', entry.id);
+        await db.from('match_queue').update({ status: 'matched', matched_with: entry.user_id, room_id: room.id }).eq('id', match.id);
+        
+        await db.from('chat_participants').insert([
+          { room_id: room.id, user_id: entry.user_id, username: entry.username },
+          { room_id: room.id, user_id: match.user_id, username: match.username },
+        ]);
+
+        await sendDbMessage(room.id, null, 'system', `${entry.username} and ${match.username} connected!`, undefined, 'system');
+
+        await upsertSession(chatId, { status: 'chatting', room_id: room.id, queue_id: null });
+        
+        // Notify the other user if they are on Telegram
+        const { data: otherTg } = await db.from('telegram_sessions').select('chat_id').eq('user_id', match.user_id).single();
+        if (otherTg) {
+          await upsertSession(otherTg.chat_id, { status: 'chatting', room_id: room.id, queue_id: null });
+          await tg.sendMessage(otherTg.chat_id, "🎉 Connected! Say hi.\n\n/next — skip\n/stop — leave\n/report — report user");
+        }
+
         return tg.sendMessage(chatId, "🎉 Connected! Say hi.\n\n/next — skip\n/stop — leave\n/report — report user");
       }
     }
-  }
 
-  // No immediate match — waiting in queue. Web users or next TG user will match.
-  await tg.sendMessage(chatId, `🔍 Searching...\n\nRegion: ${session.region}\nYou're in the queue — we'll notify you when matched!\n\nUse /stop to cancel.`);
+    // No immediate match
+    await tg.sendMessage(chatId, `🔍 Searching...\n\nRegion: ${session.region}\nYou're in the queue — we'll notify you when matched!\n\nUse /stop to cancel.`);
+  } catch (err: any) {
+    console.error('[tryFind error]', err);
+    await tg.sendMessage(chatId, `⚠️ Error: ${err.message}`);
+  }
 }
 
 // ---- Command Handlers ----

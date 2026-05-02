@@ -55,11 +55,13 @@ export async function getFileLink(fileId: string): Promise<string | null> {
   return `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
 }
 
-export async function setWebhook(url: string, secret: string) {
+export async function setWebhook(url: string, secret?: string) {
+  const payload: any = { url, allowed_updates: ['message', 'callback_query'] };
+  if (secret) payload.secret_token = secret;
   const res = await fetch(`${API}/setWebhook`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, secret_token: secret, allowed_updates: ['message', 'callback_query'] }),
+    body: JSON.stringify(payload),
   });
   return res.json();
 }

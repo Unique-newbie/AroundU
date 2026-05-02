@@ -15,8 +15,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://aroundu.vercel.app';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://around-u-psi.vercel.app';
 
 // ---- Session helpers (Supabase-backed) ----
 async function getSession(chatId: number) {
@@ -390,12 +389,6 @@ const BUTTON_MAP: Record<string, string> = {
 
 // ============== WEBHOOK ENDPOINT ==============
 export async function POST(req: NextRequest) {
-  // Verify webhook secret
-  if (WEBHOOK_SECRET) {
-    const secret = req.headers.get('x-telegram-bot-api-secret-token');
-    if (secret !== WEBHOOK_SECRET) return NextResponse.json({ ok: false }, { status: 403 });
-  }
-
   try {
     const update = await req.json();
 

@@ -4,9 +4,9 @@ import { sendMessage as sendTgMessage, sendPhoto as sendTgPhoto } from '@/lib/te
 
 export async function POST(req: NextRequest) {
   try {
+    const { user } = await getUserFromRequest(req);
     const { roomId, senderId, senderUsername, content, mediaUrl, userId } = await req.json();
 
-    const { user } = await getUserFromRequest(req);
     
     if (!user || user.id !== senderId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

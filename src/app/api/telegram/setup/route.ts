@@ -10,9 +10,8 @@ export async function GET(req: NextRequest) {
     // Ensure https://
     const baseUrl = appUrl.startsWith('http') ? appUrl : `https://${appUrl}`;
     const webhookUrl = `${baseUrl}/api/telegram`;
-    // Don't send secret if empty
-    const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-    const result = await setWebhook(webhookUrl, secret && secret.length > 0 ? secret : undefined as any);
+    // Don't send secret at all to avoid invalid character errors from env vars
+    const result = await setWebhook(webhookUrl);
     await setMyCommands();
     return NextResponse.json({ action: 'set', webhookUrl, result });
   }

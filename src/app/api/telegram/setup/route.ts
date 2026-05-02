@@ -3,12 +3,6 @@ import { setWebhook, deleteWebhook, getWebhookInfo, setMyCommands } from '@/lib/
 
 export async function GET(req: NextRequest) {
   const action = req.nextUrl.searchParams.get('action') || 'info';
-  const secret = req.nextUrl.searchParams.get('secret');
-
-  // Simple admin check
-  if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-  }
 
   if (action === 'set') {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${req.headers.get('host')}`;

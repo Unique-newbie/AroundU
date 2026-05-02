@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
+import { sendMessage as sendTgMessage } from '@/lib/telegram';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -144,6 +145,18 @@ export async function POST(req: NextRequest) {
         content: `${myEntry.username} and ${matchEntry.username} connected!`,
         msg_type: 'system',
       });
+
+      // Notify Telegram users about the match
+      try {
+        const { data: tgSessions } = await supabaseAdmin
+          .from('telegram_sessions')
+          .select('chat_id, user_id')
+          .in('user_id', [matchEntry.user_id, myEntry.user_id]);
+        for (const tg of (tgSessions || [])) {
+          await supabaseAdmin.from('telegram_sessions').update({ status: 'chatting', room_id: room.id, queue_id: null }).eq('chat_id', tg.chat_id);
+          await sendTgMessage(tg.chat_id, "🎉 Connected! Say hi.\n\n/next — skip\n/stop — leave\n/report — report user");
+        }
+      } catch (tgErr) { console.error('[QUEUE] TG notify error:', tgErr); }
 
       console.log('[QUEUE API] Match executed:', myEntry.username, '<->', matchEntry.username, 'room:', room.id);
       return NextResponse.json({ roomId: room.id });

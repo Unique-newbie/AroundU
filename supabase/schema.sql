@@ -396,3 +396,23 @@ create policy "Users can view own private images" on public.profile_gallery for 
 create policy "Users can insert own images" on public.profile_gallery for insert with check (auth.uid() = user_id);
 create policy "Users can update own images" on public.profile_gallery for update using (auth.uid() = user_id);
 create policy "Users can delete own images" on public.profile_gallery for delete using (auth.uid() = user_id);
+
+-- ============================================
+-- TELEGRAM SESSIONS (serverless webhook bot)
+-- ============================================
+create table if not exists public.telegram_sessions (
+  chat_id bigint primary key,
+  user_id uuid references auth.users(id) on delete cascade,
+  username text default '',
+  gender text default 'Other',
+  gender_pref text default 'Any',
+  region text default 'global',
+  platform_pref text default 'Any',
+  status text default 'idle' check (status in ('idle', 'searching', 'chatting')),
+  room_id uuid,
+  queue_id uuid,
+  awaiting_input text,
+  updated_at timestamptz default now()
+);
+
+alter table public.telegram_sessions enable row level security;
